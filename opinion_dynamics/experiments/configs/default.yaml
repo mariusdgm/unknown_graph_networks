@@ -1,0 +1,67 @@
+experiment: "opinion_agent_dqn"
+
+epochs_to_train: 40
+environment: [opinion_net]
+
+agent_params:
+  agent: AgentDQN
+  args_:
+    train_step_cnt: 200_000
+    validation_enabled: True
+    validation_step_cnt: 5_000
+    validation_epsilon: 0
+
+    replay_start_size: 10_000
+    batch_size: 128
+    training_freq: 4
+    
+    hard_target_update_every: 10_000
+    use_hard_target_updates: False
+    target_soft_tau: 0.0001
+    grad_norm_clip: 10.0
+
+    action_w_noise_amplitude: 0.3
+    action_w_noise_eps_floor: 0.1
+
+    gamma: 0.99
+    betas: [0.1, 1, 2]
+
+    epsilon:
+      start: 1.0
+      end: 0.05
+      decay: 2_000_000
+
+    # lr_scheduler:
+    #   name: cosine
+    #   T_max: 2_000_000   # e.g., one long cycle over your steps
+    #   eta_min: 5e-6   # floor
+
+    lr_scheduler:
+      name: cosine_wr      # enables CosineAnnealingWarmRestarts
+      T_0: 300_000          # optimizer steps per first cycle  ≈ 1.2M frames at training_freq=4
+      T_mult: 2            # cycle grows: 300k, 600k, 1.2M, ...
+      eta_min: 5e-6        # LR floor at the bottom of each cosine
+
+estimator:
+  model: OpinionNet
+  args_:
+    lin_hidden_size: 128
+    softplus_beta: 1.0
+    wstar_eps: 0.000001
+    A_min: 0.01    
+    A_max: 3
+    b_tanh_scale: null
+    c_tanh_scale: null
+
+optim:
+  name: Adam
+  args_:
+    lr: 0.00001
+    eps: 0.000001
+    betas: [0.9, 0.999]
+    weight_decay: 0
+        
+
+replay_buffer:
+  max_size: 150_000
+  n_step: 0

@@ -1,0 +1,10 @@
+experiment: ["fixed_res"]
+
+agent_params:
+  args_:
+    target_soft_tau: [0.0001, 0.0005]
+
+optim:
+  args_:
+    lr: [0.00001, 0.00003] 
+
