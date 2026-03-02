@@ -16,7 +16,6 @@ from typing import Dict
 
 from liftoff import parse_opts
 
-
 from opinion_dqn import AgentDQN
 from utils import my_logging
 from utils.experiment import create_path_to_experiment_folder

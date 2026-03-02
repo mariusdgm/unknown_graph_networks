@@ -303,3 +303,67 @@ def run_no_control_policy(env, max_steps=1000):
             else np.array([])
         ),
     )
+
+def centrality_based_continuous_control_with_v(
+    opinions: np.ndarray,
+    desired_opinion: float,
+    v: np.ndarray,
+    max_u: np.ndarray,
+    available_budget: float,
+):
+    """
+    Greedy continuous allocation using power_i = v_i * |x_i - desired|.
+    Allows partial allocation to the last node.
+    """
+    N = len(opinions)
+    deviations = np.abs(opinions - desired_opinion)
+    power = v * deviations
+    order = np.argsort(power)[::-1]
+
+    u = np.zeros(N, dtype=float)
+    remaining = float(available_budget)
+    chosen = []
+
+    for i in order:
+        if remaining <= 0:
+            break
+        assign = min(float(max_u[i]), remaining)
+        if assign > 0:
+            u[i] = assign
+            chosen.append(int(i))
+            remaining -= assign
+
+    return u, chosen
+
+def centrality_based_continuous_control(env, available_budget, v=None):
+    """
+    Greedy continuous allocation using power_i = v_i * |x_i - desired|.
+    Keeps partial leftover allocation on the last node.
+
+    If v is None, falls back to env.centralities (old behavior).
+    """
+    N = env.num_agents
+    deviations = np.abs(env.opinions - env.desired_opinion)  # (N,)
+
+    if v is None:
+        v = env.centralities
+    v = np.asarray(v, dtype=float).reshape(-1)
+    assert v.shape == (N,), f"v must be shape ({N},), got {v.shape}"
+
+    influence_powers = v * deviations
+    agent_order = np.argsort(influence_powers)[::-1]
+
+    control_action = np.zeros(N, dtype=float)
+    remaining_budget = float(available_budget)
+    controlled_nodes = []
+
+    for agent_idx in agent_order:
+        if remaining_budget <= 0:
+            break
+        assign_amount = min(float(env.max_u[agent_idx]), remaining_budget)
+        if assign_amount > 0:
+            control_action[agent_idx] = assign_amount
+            controlled_nodes.append(int(agent_idx))
+            remaining_budget -= assign_amount
+
+    return control_action, controlled_nodes
