@@ -2,57 +2,65 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from scipy.linalg import expm
 
 from rl_envs_forge.envs.network_graph.graph_utils import (
     compute_laplacian,
     compute_eigenvector_centrality,
 )
 
+from opinion_dynamics.baseline import centrality_based_continuous_control
 
-class GraphIdentifier(nn.Module):
-    def __init__(
-        self, N: int, s: float, diag_penalty: float = 1.0, l2_lambda: float = 0.0
-    ):
+
+class GraphIdentifierEnv(nn.Module):
+    """
+    Learn nonnegative adjacency A_hat (not row-stochastic) to match env's Laplacian dynamics.
+    Euler step: x_{t+s} = x_t + s * (A_hat x_t - D_hat x_t), where D_hat = diag(row_sums(A_hat)).
+    """
+    def __init__(self, N: int, s: float, l2_lambda: float = 0.0, zero_diag: bool = True):
         super().__init__()
-        self.N = N
+        self.N = int(N)
         self.s = float(s)
-        self.diag_penalty = float(diag_penalty)
         self.l2_lambda = float(l2_lambda)
+        self.zero_diag = bool(zero_diag)
 
-        self.Theta = nn.Parameter(torch.zeros(N, N))
+        self.Theta = nn.Parameter(torch.zeros(self.N, self.N))
         nn.init.kaiming_uniform_(self.Theta, a=0.0)
 
+        self.register_buffer("_diag_mask", (1.0 - torch.eye(self.N)))
+
     def A_hat(self) -> torch.Tensor:
-        # Row-stochastic
-        return F.softmax(self.Theta, dim=1)
+        # row-stochastic, nonnegative
+        A = F.softmax(self.Theta, dim=1)  # rows sum to 1
+
+        # zero diagonal
+        if self.zero_diag:
+            A = A * self._diag_mask
+
+            # renormalize after removing diagonal mass
+            rs = A.sum(dim=1, keepdim=True)
+            rs = torch.where(rs > 0, rs, torch.ones_like(rs))
+            A = A / rs
+
+        return A
 
     def predict_next(self, x: torch.Tensor) -> torch.Tensor:
-        """
-        Euler step over sample interval s:
-            x_{l+1} = x_l + s * (A x_l - x_l)   (since rows sum to 1)
-        x: (B,N)
-        """
-        A = self.A_hat()  # (N,N)
-        Ax = x @ A.T  # (B,N)
-        return x + self.s * (Ax - x)
+        A = self.A_hat()  # row-stochastic, diag=0
+        I = torch.eye(self.N, device=x.device, dtype=x.dtype)
+        L = I - A
+        M = torch.matrix_exp(-L * self.s)   # (N,N)
+        return x @ M.T                  # (B,N)
 
     def loss(self, x: torch.Tensor, x_next: torch.Tensor):
         x_hat = self.predict_next(x)
         mse = F.mse_loss(x_hat, x_next)
-
-        diag_pen = torch.diagonal(self.Theta).sum()
-        l2 = (self.Theta**2).sum()
-
-        total = mse + self.diag_penalty * diag_pen + self.l2_lambda * l2
-        return total, {
-            "mse": mse.detach(),
-            "diag_pen": diag_pen.detach(),
-            "l2": l2.detach(),
-        }
+        l2 = (self.Theta ** 2).sum()
+        total = mse + self.l2_lambda * l2
+        return total, {"mse": mse.detach(), "l2": l2.detach()}
 
 
 def train_graph_identifier(
-    model: GraphIdentifier,
+    model: GraphIdentifierEnv,
     data_x: np.ndarray,  # (T,N)
     data_x_next: np.ndarray,  # (T,N)
     lr: float = 1e-3,
@@ -87,7 +95,18 @@ def train_graph_identifier(
                 mae = (yhat - Y).abs().mean().item()
             if mae <= mae_stop:
                 break
-
+            
+        if step % 2000 == 0:
+            with torch.no_grad():
+                yhat = model.predict_next(X)
+                mae_dbg = (yhat - Y).abs().mean().item()
+                A = model.A_hat()
+                rs = A.sum(dim=1)
+                print(
+                    f"[fit] step={step} mae={mae_dbg:.4g} "
+                    f"| A_row_sum min/mean/max={rs.min().item():.3g}/{rs.mean().item():.3g}/{rs.max().item():.3g} "
+                    f"| A min/max={A.min().item():.3g}/{A.max().item():.3g}"
+                )
     with torch.no_grad():
         A_hat = model.A_hat().detach().cpu().numpy()
     return A_hat
@@ -100,39 +119,23 @@ def pairs_from_intermediate(intermediate_states: np.ndarray):
     return x, x_next
 
 
-def centrality_based_continuous_control(env, available_budget):
+
+def v_from_P(L: np.ndarray, Tc: float, tol: float = 1e-12) -> np.ndarray:
     """
-    Compute a control action distributing a continuous budget based on centrality * deviation heuristic.
-
-    Args:
-        env: The environment instance with `opinions`, `desired_opinion`, `centralities`, and `max_u` attributes.
-        available_budget (float): Total control budget to distribute.
-
-    Returns:
-        control_action (np.array): Control action array (N,) where 0 <= control_action[i] <= max_u
-        controlled_nodes (list): List of indices of nodes that received some control
+    Stationary consensus-weight vector for discrete-time propagation P = exp(-L Tc).
+    Returns v >= 0, sum(v)=1 such that v^T P = v^T.
     """
-    N = env.num_agents
-    deviations = np.abs(env.opinions - env.desired_opinion)  # (N,)
-    influence_powers = env.centralities * deviations  # (N,)
-    agent_order = np.argsort(influence_powers)[::-1]  # Sort descending by power
-
-    control_action = np.zeros(N)
-    remaining_budget = available_budget
-
-    controlled_nodes = []
-
-    for agent_idx in agent_order:
-        if remaining_budget <= 0:
-            break
-
-        assign_amount = min(float(env.max_u[agent_idx]), remaining_budget)
-        control_action[agent_idx] = assign_amount
-        controlled_nodes.append(agent_idx)
-        remaining_budget -= assign_amount
-
-    return control_action, controlled_nodes
-
+    P = expm(-L * Tc)
+    w, VL = np.linalg.eig(P.T)
+    idx = int(np.argmin(np.abs(w - 1.0)))
+    v = np.real(VL[:, idx])
+    v = np.maximum(v, 0.0)
+    s = v.sum()
+    if s <= tol:
+        # fallback (should be rare): use abs then normalize
+        v = np.abs(np.real(VL[:, idx]))
+        s = v.sum()
+    return v / (s + tol)
 
 def run_paper_baseline_like(
     env,
@@ -177,17 +180,14 @@ def run_paper_baseline_like(
     B_rem = float(B_total)
 
     # Initialize graph learner
-    gi = GraphIdentifier(N=N, s=env.t_s, diag_penalty=diag_penalty, l2_lambda=l2_lambda)
+    gi = GraphIdentifierEnv(N=N, s=env.t_s, diag_penalty=diag_penalty, l2_lambda=l2_lambda)
 
     for k in range(num_campaigns):
         # ---- 1) Train/update A_hat from all data so far
         X = np.concatenate(buf_x, axis=0) if len(buf_x) else None
         Y = np.concatenate(buf_y, axis=0) if len(buf_y) else None
-        if X is None or len(X) == 0:
-            # if no data yet, just use uniform A_hat (softmax(0))
-            A_hat = np.full((N, N), 1.0 / N)
-        else:
-            A_hat = train_graph_identifier(gi, X, Y, lr=lr, device=device)
+        
+        A_hat = train_graph_identifier(gi, X, Y, lr=lr, device=device)
         A_hats.append(A_hat)
 
         # ---- 2) Compute v from learned graph

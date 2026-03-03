@@ -1,13 +1,10 @@
 import numpy as np
 import torch
 
-from opinion_dynamics.experiments.algos import centrality_based_continuous_control
-from dynamic_programming.opinion_dynamics.algo_infinite_horizon import (
-    value_iteration,
-    extract_policy,
-    create_state_grid,
-)
-
+def create_state_grid(N, nx):
+    grid_range = np.linspace(0, 1, nx)
+    grids = [grid_range.copy() for _ in range(N)]
+    return grids
 
 def run_policy(env, policy, nx, max_steps=1000):
     """
