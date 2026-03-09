@@ -37,7 +37,7 @@ class GraphIdentifierEnv(nn.Module):
         if self.zero_diag:
             A = A * self._diag_mask
 
-            # renormalize after removing diagonal mass
+            # renormalize
             rs = A.sum(dim=1, keepdim=True)
             rs = torch.where(rs > 0, rs, torch.ones_like(rs))
             A = A / rs
