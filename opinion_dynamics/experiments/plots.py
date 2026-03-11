@@ -61,3 +61,47 @@ def plot_impulse_node_trajectories(inter_states, inter_times, title, ylim=(0, 1)
     plt.grid(True, alpha=0.25)
     plt.ylim(*ylim)
     plt.show()
+    
+def concat_intermediate(inter_list, time_list, *, dt=None, campaign_gap=None):
+    """
+    Convert list-of-campaign traces:
+      inter_list: [ (T_k,N), ... ]
+      time_list : [ (T_k,),  ... ]
+    into:
+      X: (T_total, N)
+      T: (T_total,)
+    with monotonically increasing time.
+    """
+    xs_all, ts_all = [], []
+    offset = 0.0
+
+    for xs, ts in zip(inter_list, time_list):
+        if xs is None or ts is None:
+            continue
+
+        xs = np.asarray(xs, dtype=float)
+        ts = np.asarray(ts, dtype=float)
+
+        # ensure 1D time
+        if ts.ndim != 1:
+            ts = ts.reshape(-1)
+
+        ts_shift = ts + offset
+
+        xs_all.append(xs)
+        ts_all.append(ts_shift)
+
+        # advance offset for next campaign
+        if campaign_gap is not None:
+            offset = ts_shift[-1] + float(campaign_gap)
+        elif dt is not None:
+            offset = ts_shift[-1] + float(dt)
+        else:
+            offset = ts_shift[-1] + 1.0
+
+    if not xs_all:
+        raise RuntimeError("No valid intermediate traces to concatenate.")
+
+    X = np.concatenate(xs_all, axis=0)
+    T = np.concatenate(ts_all, axis=0)
+    return X, T

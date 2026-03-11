@@ -130,3 +130,65 @@ def rollout_with_policy_intermediate(env_template, x0, *, num_campaigns_total, B
 
     return env, np.array(states), np.array(actions), np.array(rewards), np.array(inter_states), np.array(inter_times)
 
+
+def rollout_with_v_intermediate(env, x0, K_total, B_campaign, v_used, *, zero_first_campaign=True):
+    """
+    Roll out on env, collecting info['intermediate_states'] each campaign.
+
+    IMPORTANT: If zero_first_campaign=True, campaign 0 uses u=0 even for oracle,
+    matching the learned experiment's data-collection campaign.
+    """
+    N = env.num_agents
+    ubar_vec = np.asarray(env.max_u, dtype=float)
+
+    # reset and set x0 if possible
+    x, _ = env.reset()
+    if hasattr(env, "set_state"):
+        env.set_state(x0)
+        x = x0.copy()
+
+    states = [x.copy()]
+    actions, rewards = [], []
+
+    inter_list, time_list = [], []
+    dt = getattr(env, "t_s", None)
+
+    for k in range(K_total):
+        # --- CONTROL CHOICE ---
+        if zero_first_campaign and k == 0:
+            uk = np.zeros(N, dtype=float)
+        else:
+            if v_used is None:
+                uk = np.zeros(N, dtype=float)
+            else:
+                beta_k = min(float(B_campaign), float(ubar_vec.sum()))
+                uk, _ = centrality_based_continuous_control(env, beta_k, v=v_used)
+
+        x_next, r, done, trunc, info = env.step(uk)
+        actions.append(uk.copy())
+        rewards.append(float(r))
+        states.append(x_next.copy())
+
+        inter = info.get("intermediate_states", None)
+        if inter is None:
+            inter_list.append(None)
+            time_list.append(None)
+        else:
+            inter_arr = np.asarray(inter, dtype=float)  # (T_k, N)
+            if dt is None:
+                t = np.arange(inter_arr.shape[0], dtype=float)
+            else:
+                t = dt * np.arange(inter_arr.shape[0], dtype=float)
+            inter_list.append(inter_arr)
+            time_list.append(t)
+
+        if done or trunc:
+            break
+
+    return {
+        "states": np.asarray(states, dtype=float),          # (K+1, N)
+        "actions": np.asarray(actions, dtype=float),        # (K, N)
+        "rewards": np.asarray(rewards, dtype=float),        # (K,)
+        "intermediate_states_list": inter_list,             # list of (T_k, N)
+        "intermediate_times_list": time_list,               # list of (T_k,)
+    }
