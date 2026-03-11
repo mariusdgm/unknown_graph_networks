@@ -25,7 +25,37 @@ def _clone_env_from_template(env_template):
     )
     return EnvCls(**kwargs)
 
-
+def make_env_with_dynamics(env_factory, seed: int, dynamics_model: str):
+    """
+    Best-effort:
+    1) try to ask the factory directly for coca/laplacian
+    2) if factory doesn't accept it, build env normally then reconstruct with same graph but new dynamics
+    """
+    try:
+        return env_factory.get_randomized_env(seed=int(seed), dynamics_model=str(dynamics_model))
+    except TypeError:
+        # factory signature doesn't accept dynamics_model; fallback:
+        base = env_factory.get_randomized_env(seed=int(seed))
+        EnvCls = base.__class__
+        kwargs = dict(
+            connectivity_matrix=np.array(base.connectivity_matrix, copy=True),
+            num_agents=base.num_agents,
+            max_u=np.array(base.max_u, copy=True),
+            desired_opinion=float(base.desired_opinion),
+            t_campaign=float(base.t_campaign),
+            t_s=float(base.t_s),
+            dynamics_model=str(dynamics_model),
+            control_resistance=np.array(base.control_resistance, copy=True),
+            max_steps=int(getattr(base, "max_steps", 10_000)),
+            opinion_end_tolerance=float(getattr(base, "opinion_end_tolerance", 0.01)),
+            control_beta=float(getattr(base, "control_beta", 0.4)),
+            normalize_reward=bool(getattr(base, "normalize_reward", False)),
+            terminal_reward=float(getattr(base, "terminal_reward", 0.0)),
+            terminate_when_converged=bool(getattr(base, "terminate_when_converged", True)),
+            seed=int(getattr(base, "seed", seed)) if getattr(base, "seed", None) is not None else int(seed),
+        )
+        return EnvCls(**kwargs)
+    
 def rollout_with_v(env_template, x0, num_campaigns_total, B_campaign, v_used):
     """
     campaign0: zero control
