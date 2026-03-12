@@ -161,27 +161,29 @@ def rollout_with_policy_intermediate(env_template, x0, *, num_campaigns_total, B
     return env, np.array(states), np.array(actions), np.array(rewards), np.array(inter_states), np.array(inter_times)
 
 
-def rollout_with_v_intermediate(env, x0, K_total, B_campaign, v_used, *, zero_first_campaign=True):
+def rollout_with_v_intermediate(env_template, x0, K_total, B_campaign, v_used, *, zero_first_campaign=True):
     """
-    Roll out on env, collecting info['intermediate_states'] each campaign.
+    Roll out on a FRESH env cloned from env_template, starting from EXACTLY x0,
+    collecting info['intermediate_states'] each campaign.
 
     IMPORTANT: If zero_first_campaign=True, campaign 0 uses u=0 even for oracle,
     matching the learned experiment's data-collection campaign.
     """
+    # Always clone so we don't reuse a stepped env
+    env = _clone_env_from_template(env_template)
+
     N = env.num_agents
     ubar_vec = np.asarray(env.max_u, dtype=float)
 
-    # reset and set x0 if possible
-    x, _ = env.reset()
-    if hasattr(env, "set_state"):
-        env.set_state(x0)
-        x = x0.copy()
+    # Reset then FORCE the starting state to x0 (NetworkGraph uses env.opinions / env.state)
+    env.reset()
+    env.opinions = np.array(x0, copy=True)
 
-    states = [x.copy()]
+    states = [env.opinions.copy()]
     actions, rewards = [], []
 
     inter_list, time_list = [], []
-    dt = getattr(env, "t_s", None)
+    dt = float(getattr(env, "t_s", 1.0))
 
     for k in range(K_total):
         # --- CONTROL CHOICE ---
@@ -205,10 +207,7 @@ def rollout_with_v_intermediate(env, x0, K_total, B_campaign, v_used, *, zero_fi
             time_list.append(None)
         else:
             inter_arr = np.asarray(inter, dtype=float)  # (T_k, N)
-            if dt is None:
-                t = np.arange(inter_arr.shape[0], dtype=float)
-            else:
-                t = dt * np.arange(inter_arr.shape[0], dtype=float)
+            t = dt * np.arange(inter_arr.shape[0], dtype=float)
             inter_list.append(inter_arr)
             time_list.append(t)
 
@@ -221,4 +220,5 @@ def rollout_with_v_intermediate(env, x0, K_total, B_campaign, v_used, *, zero_fi
         "rewards": np.asarray(rewards, dtype=float),        # (K,)
         "intermediate_states_list": inter_list,             # list of (T_k, N)
         "intermediate_times_list": time_list,               # list of (T_k,)
+        "env": env,                                         # helpful for debugging
     }
