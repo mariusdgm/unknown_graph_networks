@@ -10,8 +10,8 @@ from rl_envs_forge.envs.network_graph.graph_utils import (
     compute_eigenvector_centrality,
 )
 
-from ..identify import (
-    GraphIdentifierEnv,
+from ..identify_nonlinear import (
+    GraphIdentifierEnvNonlinear,
     pairs_from_intermediate,
     train_graph_identifier,
 )
@@ -39,6 +39,7 @@ def run_single_seed_experiment(
     fit_mae_stop: float | None = None,
     fit_batch_size: int | None = None,
     fit_check_every: int | None = None,  # kept for signature consistency
+    identifier_kwargs: dict | None = None,
 ):
     import numpy as np
 
@@ -77,6 +78,7 @@ def run_single_seed_experiment(
         fit_mae_stop=fit_mae_stop,
         fit_batch_size=fit_batch_size,
         fit_check_every=fit_check_every,
+        identifier_kwargs=identifier_kwargs,
     )
 
     env0 = out["env"]
@@ -219,6 +221,7 @@ def run_single_paper_experiment_per_campaign_budget_on_env(
     fit_mae_stop=1e-3,
     fit_batch_size=64,
     fit_check_every=200,   # NOTE: only used if your train_graph_identifier supports it
+    identifier_kwargs=None,
 ):
     """
     Online experiment on a PROVIDED env instance.
@@ -301,7 +304,10 @@ def run_single_paper_experiment_per_campaign_budget_on_env(
     buf_x.append(Xp)
     buf_y.append(Yp)
 
-    gi = GraphIdentifierEnv(N=N, s=env.t_s, l2_lambda=l2_lambda, zero_diag=True)
+    gi = GraphIdentifierEnvNonlinear(
+        N=N, s=env.t_s, l2_lambda=l2_lambda, zero_diag=True,
+        **({} if identifier_kwargs is None else identifier_kwargs),
+    )
 
     def _fit_current():
         X = np.concatenate(buf_x, axis=0)
@@ -471,6 +477,7 @@ def run_single_online_id_on_env(
     fit_max_steps=50_000,
     fit_mae_stop=1e-3,
     fit_batch_size=64,
+    identifier_kwargs=None,
 ):
     """
     Campaign0=zero control to collect data, then centrality control with learned v.
@@ -525,7 +532,10 @@ def run_single_online_id_on_env(
     buf_x.append(Xp)
     buf_y.append(Yp)
 
-    gi = GraphIdentifierEnv(N=N, s=env.t_s, l2_lambda=l2_lambda, zero_diag=True)
+    gi = GraphIdentifierEnvNonlinear(
+        N=N, s=env.t_s, l2_lambda=l2_lambda, zero_diag=True,
+        **({} if identifier_kwargs is None else identifier_kwargs),
+    )
 
     # --- helper: timed fit ---
     def _fit():
@@ -622,6 +632,7 @@ def run_multi_seed_experiment_dynamics(
     # NEW: timing controls
     timing: bool = True,
     timing_print: bool = False,
+    identifier_kwargs: dict | None = None,
 ):
     """
     Multi-seed runner comparing dynamics ("laplacian" vs "coca") while keeping the
@@ -677,6 +688,7 @@ def run_multi_seed_experiment_dynamics(
             fit_max_steps=fit_max_steps,
             fit_mae_stop=fit_mae_stop,
             fit_batch_size=fit_batch_size,
+            identifier_kwargs=identifier_kwargs,
         )
         t_online = time.perf_counter() - t0
 
