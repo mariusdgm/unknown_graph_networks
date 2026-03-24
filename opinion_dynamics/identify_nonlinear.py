@@ -3,6 +3,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+import inspect
+
 
 class GraphIdentifierEnvNonlinear(nn.Module):
     """
@@ -25,16 +27,25 @@ class GraphIdentifierEnvNonlinear(nn.Module):
         self,
         N: int,
         s: float,
-        l2_lambda: float = 0.0,
+        l2_lambda: float = 1e-4,
         zero_diag: bool = True,
-        hidden_dim: int = 32,
-        alpha_min: float = 0.0,
-        alpha_max: float = 2.0,
-        anchor_lambda: float = 1e-3,
+        hidden_dim: int = 16,
+        alpha_min: float = 0.5,
+        alpha_max: float = 1.5,
+        anchor_lambda: float = 1e-2,
         odd_lambda: float = 1e-3,
+        entropy_lambda: float = 1e-3,
+        alpha_var_lambda: float = 1e-3,
         device: str | None = None,
     ):
         super().__init__()
+        print(
+            f"[identifier-init] class={self.__class__.__name__} "
+            f"module={self.__class__.__module__} "
+            f"file={inspect.getsourcefile(self.__class__)}:"
+            f"{inspect.getsourcelines(self.__class__)[1]}"
+        )
+        
         self.N = int(N)
         self.s = float(s)
         self.l2_lambda = float(l2_lambda)
@@ -44,6 +55,8 @@ class GraphIdentifierEnvNonlinear(nn.Module):
         self.alpha_max = float(alpha_max)
         self.anchor_lambda = float(anchor_lambda)
         self.odd_lambda = float(odd_lambda)
+        self.entropy_lambda = float(entropy_lambda)
+        self.alpha_var_lambda = float(alpha_var_lambda)
 
         # Static adjacency parameterization.
         self.Theta = nn.Parameter(torch.zeros(self.N, self.N))
@@ -77,9 +90,10 @@ class GraphIdentifierEnvNonlinear(nn.Module):
 
     def alpha(self, xi: torch.Tensor, xj: torch.Tensor) -> torch.Tensor:
         """
-        xi, xj: (...,) tensors broadcastable to same shape.
+        xi, xj: tensors broadcastable to the same shape.
         Returns a modulation factor in [alpha_min, alpha_max].
         """
+        xi, xj = torch.broadcast_tensors(xi, xj)
         diff = xj - xi
         feats = torch.stack([xi, xj, diff], dim=-1)
         raw = self.alpha_net(feats).squeeze(-1)
@@ -105,12 +119,16 @@ class GraphIdentifierEnvNonlinear(nn.Module):
         agg = (A.unsqueeze(0) * weighted_diff).sum(dim=2)  # (B, N)
         return x + self.s * agg
 
-    def regularization_loss(self) -> tuple[torch.Tensor, dict]:
+    def regularization_loss(self, sample_x: torch.Tensor | None = None) -> tuple[torch.Tensor, dict]:
         """
-        Small structural regularizers to keep the nonlinear interaction close to
-        a consensus-like law near zero disagreement.
+        Structural regularizers that keep the nonlinear interaction close to a
+        consensus-like law unless the data strongly demands otherwise.
         """
         l2 = (self.Theta ** 2).sum()
+
+        # Encourage sharper / lower-entropy rows in A_hat.
+        A = self.A_hat()
+        row_entropy = -(A.clamp_min(1e-12) * A.clamp_min(1e-12).log()).sum(dim=1).mean()
 
         # Anchor local linear case: alpha(x, x) ~= 1 near the diagonal.
         z = torch.zeros(16, device=self.Theta.device)
@@ -118,28 +136,54 @@ class GraphIdentifierEnvNonlinear(nn.Module):
         anchor = ((alpha0 - 1.0) ** 2).mean()
 
         # Mild symmetry preference around small disagreements.
-        # For equal and opposite perturbations around 0, alpha should not vary wildly.
         eps = self._eps.to(self.Theta.device)
         x_left = -eps * torch.ones(16, device=self.Theta.device)
         x_mid = torch.zeros(16, device=self.Theta.device)
         x_right = eps * torch.ones(16, device=self.Theta.device)
         oddish = ((self.alpha(x_left, x_mid) - self.alpha(x_mid, x_right)) ** 2).mean()
 
-        reg = self.l2_lambda * l2 + self.anchor_lambda * anchor + self.odd_lambda * oddish
+        # Keep alpha from varying too wildly over observed pairs.
+        if sample_x is not None and sample_x.numel() > 0:
+            xi = sample_x.unsqueeze(2)
+            xj = sample_x.unsqueeze(1)
+            alpha_vals = self.alpha(xi, xj)
+            if self.zero_diag:
+                alpha_vals = alpha_vals * self._diag_mask.unsqueeze(0)
+                denom = self._diag_mask.sum() * max(sample_x.shape[0], 1)
+                alpha_mean = alpha_vals.sum() / denom.clamp_min(1.0)
+                alpha_var = ((alpha_vals - alpha_mean) ** 2).sum() / denom.clamp_min(1.0)
+            else:
+                alpha_var = alpha_vals.var(unbiased=False)
+        else:
+            alpha_var = torch.tensor(0.0, device=self.Theta.device)
+
+        reg = (
+            self.l2_lambda * l2
+            + self.entropy_lambda * row_entropy
+            + self.anchor_lambda * anchor
+            + self.odd_lambda * oddish
+            + self.alpha_var_lambda * alpha_var
+        )
         parts = {
             "l2": l2.detach(),
+            "row_entropy": row_entropy.detach(),
             "anchor": anchor.detach(),
             "oddish": oddish.detach(),
+            "alpha_var": alpha_var.detach(),
         }
         return reg, parts
 
     def loss(self, x: torch.Tensor, x_next: torch.Tensor):
         x_hat = self.predict_next(x)
         mse = F.mse_loss(x_hat, x_next)
-        reg, reg_parts = self.regularization_loss()
+        reg, reg_parts = self.regularization_loss(sample_x=x)
         total = mse + reg
         parts = {"mse": mse.detach(), **reg_parts}
         return total, parts
+
+
+# Optional alias so you can import it with a familiar name in experiments.
+GraphIdentifierEnv = GraphIdentifierEnvNonlinear
 
 
 def train_graph_identifier(
@@ -153,9 +197,9 @@ def train_graph_identifier(
     device: str = "cpu",
     fit_check_every: int = 200,
     verbose_every: int = 2000,
+    alpha_warmup_steps: int = 1000,
 ):
     model.to(device)
-    opt = torch.optim.Adam(model.parameters(), lr=lr)
 
     X = torch.tensor(data_x, dtype=torch.float32, device=device)
     Y = torch.tensor(data_x_next, dtype=torch.float32, device=device)
@@ -164,7 +208,22 @@ def train_graph_identifier(
     if n == 0:
         raise ValueError("No training pairs provided.")
 
+    alpha_params = list(model.alpha_net.parameters())
+    theta_params = [model.Theta]
+    if alpha_warmup_steps > 0:
+        opt = torch.optim.Adam(theta_params, lr=lr)
+    else:
+        opt = torch.optim.Adam(model.parameters(), lr=lr)
+
     for step in range(max_steps):
+        if step == alpha_warmup_steps and alpha_warmup_steps > 0:
+            opt = torch.optim.Adam(
+                [
+                    {"params": theta_params, "lr": lr},
+                    {"params": alpha_params, "lr": lr * 0.5},
+                ]
+            )
+
         idx = torch.randint(0, n, (min(batch_size, n),), device=device)
         xb, yb = X[idx], Y[idx]
 
