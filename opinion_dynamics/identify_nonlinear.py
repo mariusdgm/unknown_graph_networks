@@ -67,8 +67,8 @@ class GraphIdentifierEnvNonlinear(nn.Module):
         self.alpha_net = nn.Sequential(
             nn.Linear(3, self.hidden_dim),
             nn.Tanh(),
-            nn.Linear(self.hidden_dim, self.hidden_dim),
-            nn.Tanh(),
+            # nn.Linear(self.hidden_dim, self.hidden_dim),
+            # nn.Tanh(),
             nn.Linear(self.hidden_dim, 1),
         )
 

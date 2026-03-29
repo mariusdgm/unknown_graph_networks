@@ -60,8 +60,8 @@ class GraphIdentifierEnvFreeProp(nn.Module):
         self.prop_net = nn.Sequential(
             nn.Linear(1, self.hidden_dim),
             nn.Tanh(),
-            nn.Linear(self.hidden_dim, self.hidden_dim),
-            nn.Tanh(),
+            # nn.Linear(self.hidden_dim, self.hidden_dim),
+            # nn.Tanh(),
             nn.Linear(self.hidden_dim, 1),
         )
 
