@@ -216,12 +216,10 @@ def run_single_paper_experiment_per_campaign_budget_on_env(
     device="cpu",
     update_A_each_campaign=True,
     suppress_fit_logs=True,
-
-    # NEW fit budget knobs (threaded into train_graph_identifier)
     fit_max_steps=50_000,
     fit_mae_stop=1e-3,
     fit_batch_size=64,
-    fit_check_every=200,   # NOTE: only used if your train_graph_identifier supports it
+    fit_check_every=200,   
     identifier_kwargs=None,
 ):
     """
@@ -324,6 +322,7 @@ def run_single_paper_experiment_per_campaign_budget_on_env(
                     max_steps=fit_max_steps,
                     mae_stop=fit_mae_stop,
                     device=device,
+                    fit_check_every=fit_check_every,
                 )
         else:
             A_hat = train_graph_identifier(
@@ -333,6 +332,7 @@ def run_single_paper_experiment_per_campaign_budget_on_env(
                 max_steps=fit_max_steps,
                 mae_stop=fit_mae_stop,
                 device=device,
+                fit_check_every=fit_check_every,
             )
         return A_hat
 

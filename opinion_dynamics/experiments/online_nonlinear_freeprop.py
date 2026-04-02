@@ -324,6 +324,7 @@ def run_single_paper_experiment_per_campaign_budget_on_env(
                     max_steps=fit_max_steps,
                     mae_stop=fit_mae_stop,
                     device=device,
+                    fit_check_every=fit_check_every,
                 )
         else:
             A_hat = train_graph_identifier(
@@ -333,6 +334,7 @@ def run_single_paper_experiment_per_campaign_budget_on_env(
                 max_steps=fit_max_steps,
                 mae_stop=fit_mae_stop,
                 device=device,
+                fit_check_every=fit_check_every,
             )
         return A_hat
 
@@ -556,6 +558,7 @@ def run_single_online_id_on_env(
                     max_steps=fit_max_steps,
                     mae_stop=fit_mae_stop,
                     device=device,
+                    fit_check_every=fit_check_every,
                 )
         else:
             A_hat = train_graph_identifier(
@@ -567,6 +570,7 @@ def run_single_online_id_on_env(
                 max_steps=fit_max_steps,
                 mae_stop=fit_mae_stop,
                 device=device,
+                fit_check_every=fit_check_every,
             )
 
         timing["fit_time"] += (time.perf_counter() - t0)
