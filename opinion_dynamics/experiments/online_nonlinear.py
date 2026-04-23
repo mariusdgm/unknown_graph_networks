@@ -199,7 +199,7 @@ def run_single_seed_experiment(
             fit_max_steps=int(fit_max_steps),
             fit_mae_stop=float(fit_mae_stop),
             fit_batch_size=int(fit_batch_size),
-            fit_check_every=int(fit_check_every),
+            fit_check_every=int),
         ),
     )
 
