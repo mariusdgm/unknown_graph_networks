@@ -1,8 +1,21 @@
 # Draft up in overleaf, formulas for new dynamics and for the models we use for learning
 
-# Rerun experiment with no control, make sure we cover the 0-1 space with random inits, for the last learned model then do control and check metrics
-# Make baseline with uniform policy instead of concentrated
-# Plot trajectories with complete learned model (learned A and alpha)
+# Control with learned should be as good as true model + optimal control 
+
+And should be better than uniform 
+
+Control should always be done on original env 
+
+####
+Simplify learning scheme like the temperature of A vs apha 
+
+#####
+Instead of doing control with learned A
+Compute new A * theta
+
+#### 
+Make an experiment to see where performance degrades sharply vs amount of data
+
 
 # 2 Step experiment:
 use current setup to learn A and alpha (we do system identification here) -> freeze the model
