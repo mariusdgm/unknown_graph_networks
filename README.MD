@@ -1,5 +1,3 @@
-# Draft up in overleaf, formulas for new dynamics and for the models we use for learning
-
 # Control with learned should be as good as true model + optimal control 
 
 And should be better than uniform 
