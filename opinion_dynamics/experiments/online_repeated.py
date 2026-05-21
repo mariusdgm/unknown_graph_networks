@@ -11,7 +11,12 @@ from rl_envs_forge.envs.network_graph.graph_utils import (
     compute_eigenvector_centrality,
 )
 
-from ..identify_freeprop import (
+# from ..identify_freeprop import (
+#     GraphIdentifierEnv,
+#     pairs_from_intermediate,
+#     train_graph_identifier,
+# )
+from ..identify_nonlinear import (
     GraphIdentifierEnv,
     pairs_from_intermediate,
     train_graph_identifier,

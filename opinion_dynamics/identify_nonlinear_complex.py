@@ -29,7 +29,7 @@ class GraphIdentifierEnvNonlinear(nn.Module):
         s: float,
         l2_lambda: float = 1e-4,
         zero_diag: bool = True,
-        hidden_dim: int = 16,
+        hidden_dim: int = 8,
         alpha_min: float = 0.5,
         alpha_max: float = 1.5,
         anchor_lambda: float = 1e-2,

@@ -3,6 +3,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+import inspect
+
 
 class GraphIdentifierEnvNonlinear(nn.Module):
     """
@@ -17,9 +19,10 @@ class GraphIdentifierEnvNonlinear(nn.Module):
       - row-stochastic nonnegative A_hat
       - optional zero diagonal
       - bounded shared nonlinear modulator alpha_phi
+      - optional L2 penalty on Theta (kept for compatibility with older callers)
 
     and removes:
-      - structural regularization terms
+      - structural regularization terms beyond optional L2
       - staged / warmup training
       - separate learning rates for Theta and alpha_net
       - init-time source-location debug printing
@@ -29,16 +32,24 @@ class GraphIdentifierEnvNonlinear(nn.Module):
         self,
         N: int,
         s: float,
+        l2_lambda: float = 0.0,
         zero_diag: bool = True,
-        hidden_dim: int = 16,
+        hidden_dim: int = 8,
         alpha_min: float = 0.5,
         alpha_max: float = 1.5,
         device: str | None = None,
     ):
         super().__init__()
+        print(
+            f"[identifier-init] class={self.__class__.__name__} "
+            f"module={self.__class__.__module__} "
+            f"file={inspect.getsourcefile(self.__class__)}:"
+            f"{inspect.getsourcelines(self.__class__)[1]}"
+        )
 
         self.N = int(N)
         self.s = float(s)
+        self.l2_lambda = float(l2_lambda)
         self.zero_diag = bool(zero_diag)
         self.hidden_dim = int(hidden_dim)
         self.alpha_min = float(alpha_min)
@@ -104,11 +115,17 @@ class GraphIdentifierEnvNonlinear(nn.Module):
 
     def loss(self, x: torch.Tensor, x_next: torch.Tensor):
         """
-        Plain one-step prediction loss (no regularizers).
+        One-step prediction loss with optional L2 penalty on Theta.
+
+        The L2 term is kept only for compatibility with older code paths that
+        instantiate the identifier with l2_lambda=... as in the freeprop / linear
+        identifier variants.
         """
         x_hat = self.predict_next(x)
         mse = F.mse_loss(x_hat, x_next)
-        return mse, {"mse": mse.detach()}
+        l2 = (self.Theta ** 2).sum()
+        total = mse + self.l2_lambda * l2
+        return total, {"mse": mse.detach(), "l2": l2.detach()}
 
 
 # Optional alias so you can import it with a familiar name in experiments.
@@ -133,6 +150,7 @@ def train_graph_identifier(
       - no warmup schedule
       - no split learning rates
       - early stopping on full-dataset MAE
+      - supports optional l2_lambda passed at model construction
     """
     model.to(device)
 
