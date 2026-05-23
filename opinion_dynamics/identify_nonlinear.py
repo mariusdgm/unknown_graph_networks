@@ -35,8 +35,8 @@ class GraphIdentifierEnvNonlinear(nn.Module):
         l2_lambda: float = 0.0,
         zero_diag: bool = True,
         hidden_dim: int = 8,
-        alpha_min: float = 0.5,
-        alpha_max: float = 1.5,
+        alpha_min: float = 0,
+        alpha_max: float = 1,
         device: str | None = None,
     ):
         super().__init__()
@@ -88,8 +88,8 @@ class GraphIdentifierEnvNonlinear(nn.Module):
         Returns a modulation factor in [alpha_min, alpha_max].
         """
         xi, xj = torch.broadcast_tensors(xi, xj)
-        diff = xj - xi
-        feats = torch.stack([xi, xj, diff], dim=-1)
+        abs_diff = abs(xj - xi)
+        feats = torch.stack([xi, xj, abs_diff], dim=-1)
         raw = self.alpha_net(feats).squeeze(-1)
         return self.alpha_min + (self.alpha_max - self.alpha_min) * torch.sigmoid(raw)
 
