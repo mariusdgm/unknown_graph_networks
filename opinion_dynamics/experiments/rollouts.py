@@ -56,10 +56,26 @@ def make_env_with_dynamics(env_factory, seed: int, dynamics_model: str):
         )
         return EnvCls(**kwargs)
     
-def rollout_with_v(env_template, x0, num_campaigns_total, B_campaign, v_used):
+def rollout_with_v(
+    env_template,
+    x0,
+    num_campaigns_total,
+    B_campaign,
+    v_used,
+    *,
+    zero_first_campaign: bool = False,
+):
     """
-    campaign0: zero control
-    campaign1..: centrality control using v_used (or None -> no control)
+    Roll out centrality-based control from x0 for num_campaigns_total campaigns.
+
+    Default behavior is aligned with learned-model evaluation: controlled policies
+    may act at campaign 0. Set zero_first_campaign=True only for an explicit
+    passive-first-campaign ablation.
+
+    v_used:
+      - ndarray: centrality vector used for greedy control
+      - None: zero-control rollout
+
     returns states at campaign boundaries (K+1, N)
     """
     env = _clone_env_from_template(env_template)
@@ -70,16 +86,10 @@ def rollout_with_v(env_template, x0, num_campaigns_total, B_campaign, v_used):
     ubar_vec = np.asarray(env.max_u, dtype=float)
 
     states = [env.opinions.copy()]
+    done = trunc = False
 
-    # campaign0: no control
-    u0 = np.zeros(N, dtype=float)
-    x1, r0, done, trunc, info0 = env.step(u0)
-    states.append(x1.copy())
-
-    for k in range(1, num_campaigns_total):
-        if done or trunc:
-            break
-        if v_used is None:
+    for k in range(int(num_campaigns_total)):
+        if (zero_first_campaign and k == 0) or (v_used is None):
             uk = np.zeros(N, dtype=float)
         else:
             beta_k = min(float(B_campaign), float(ubar_vec.sum()))
@@ -88,13 +98,20 @@ def rollout_with_v(env_template, x0, num_campaigns_total, B_campaign, v_used):
         x_next, r, done, trunc, info = env.step(uk)
         states.append(x_next.copy())
 
+        if done or trunc:
+            break
+
     return np.asarray(states)
 
-def rollout_with_policy_intermediate(env_template, x0, *, num_campaigns_total, B_campaign, v_used, mode="oracle"):
+def rollout_with_policy_intermediate(env_template, x0, *, num_campaigns_total, B_campaign, v_used, mode="oracle", zero_first_campaign: bool = False):
     """
     mode:
-      - "oracle": campaign0 is zero-control, then centrality-based control using v_used each campaign
+      - "oracle": centrality-based control using v_used each campaign
       - "nocontrol": always zero action
+
+    Default behavior is aligned with learned-model evaluation: oracle may act
+    at campaign 0. Set zero_first_campaign=True only for an explicit
+    passive-first-campaign ablation.
     Returns:
       env, states_boundaries, actions, rewards, inter_states, inter_times
     """
@@ -132,11 +149,13 @@ def rollout_with_policy_intermediate(env_template, x0, *, num_campaigns_total, B
     inter_times  = []
 
     for k in range(num_campaigns_total):
-        if mode == "nocontrol" or (k == 0):
+        if mode == "nocontrol" or v_used is None or (zero_first_campaign and k == 0):
             uk = np.zeros(N, dtype=float)
-        else:
+        elif mode == "oracle":
             beta_k = min(float(B_campaign), float(ubar_vec.sum()))
             uk, _ = centrality_based_continuous_control(env, beta_k, v=v_used)
+        else:
+            raise ValueError(f"Unknown rollout mode: {mode!r}")
 
         x_next, r, done, trunc, info = env.step(uk)
 
@@ -161,13 +180,14 @@ def rollout_with_policy_intermediate(env_template, x0, *, num_campaigns_total, B
     return env, np.array(states), np.array(actions), np.array(rewards), np.array(inter_states), np.array(inter_times)
 
 
-def rollout_with_v_intermediate(env_template, x0, K_total, B_campaign, v_used, *, zero_first_campaign=True):
+def rollout_with_v_intermediate(env_template, x0, K_total, B_campaign, v_used, *, zero_first_campaign: bool = False):
     """
     Roll out on a FRESH env cloned from env_template, starting from EXACTLY x0,
     collecting info['intermediate_states'] each campaign.
 
-    IMPORTANT: If zero_first_campaign=True, campaign 0 uses u=0 even for oracle,
-    matching the learned experiment's data-collection campaign.
+    Default behavior is aligned with learned-model evaluation: oracle may act
+    at campaign 0. Set zero_first_campaign=True only for an explicit
+    passive-first-campaign ablation.
     """
     # Always clone so we don't reuse a stepped env
     env = _clone_env_from_template(env_template)

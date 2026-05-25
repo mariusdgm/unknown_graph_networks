@@ -5,7 +5,7 @@ And should be better than uniform
 Control should always be done on original env 
 
 ####
-Simplify learning scheme like the temperature of A vs apha 
+Simplify learning scheme like the temperature of A vs alpha 
 
 #####
 Instead of doing control with learned A
