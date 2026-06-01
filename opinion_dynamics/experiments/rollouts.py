@@ -1,3 +1,4 @@
+from typing import Any
 import numpy as np
 
 from opinion_dynamics.baseline import centrality_based_continuous_control
@@ -16,14 +17,23 @@ def _clone_env_from_template(env_template):
         dynamics_model=str(env_template.dynamics_model),
         control_resistance=np.array(env_template.control_resistance, copy=True),
         max_steps=int(getattr(env_template, "max_steps", 10_000)),
-        opinion_end_tolerance=float(getattr(env_template, "opinion_end_tolerance", 0.01)),
+        opinion_end_tolerance=float(
+            getattr(env_template, "opinion_end_tolerance", 0.01)
+        ),
         control_beta=float(getattr(env_template, "control_beta", 0.4)),
         normalize_reward=bool(getattr(env_template, "normalize_reward", False)),
         terminal_reward=float(getattr(env_template, "terminal_reward", 0.0)),
-        terminate_when_converged=bool(getattr(env_template, "terminate_when_converged", True)),
-        seed=int(getattr(env_template, "seed", 0)) if getattr(env_template, "seed", None) is not None else None,
+        terminate_when_converged=bool(
+            getattr(env_template, "terminate_when_converged", True)
+        ),
+        seed=(
+            int(getattr(env_template, "seed", 0))
+            if getattr(env_template, "seed", None) is not None
+            else None
+        ),
     )
     return EnvCls(**kwargs)
+
 
 def make_env_with_dynamics(env_factory, seed: int, dynamics_model: str):
     """
@@ -32,7 +42,9 @@ def make_env_with_dynamics(env_factory, seed: int, dynamics_model: str):
     2) if factory doesn't accept it, build env normally then reconstruct with same graph but new dynamics
     """
     try:
-        return env_factory.get_randomized_env(seed=int(seed), dynamics_model=str(dynamics_model))
+        return env_factory.get_randomized_env(
+            seed=int(seed), dynamics_model=str(dynamics_model)
+        )
     except TypeError:
         # factory signature doesn't accept dynamics_model; fallback:
         base = env_factory.get_randomized_env(seed=int(seed))
@@ -51,11 +63,18 @@ def make_env_with_dynamics(env_factory, seed: int, dynamics_model: str):
             control_beta=float(getattr(base, "control_beta", 0.4)),
             normalize_reward=bool(getattr(base, "normalize_reward", False)),
             terminal_reward=float(getattr(base, "terminal_reward", 0.0)),
-            terminate_when_converged=bool(getattr(base, "terminate_when_converged", True)),
-            seed=int(getattr(base, "seed", seed)) if getattr(base, "seed", None) is not None else int(seed),
+            terminate_when_converged=bool(
+                getattr(base, "terminate_when_converged", True)
+            ),
+            seed=(
+                int(getattr(base, "seed", seed))
+                if getattr(base, "seed", None) is not None
+                else int(seed)
+            ),
         )
         return EnvCls(**kwargs)
-    
+
+
 def rollout_with_v(env_template, x0, num_campaigns_total, B_campaign, v_used):
     """
     campaign0: zero control
@@ -90,7 +109,10 @@ def rollout_with_v(env_template, x0, num_campaigns_total, B_campaign, v_used):
 
     return np.asarray(states)
 
-def rollout_with_policy_intermediate(env_template, x0, *, num_campaigns_total, B_campaign, v_used, mode="oracle"):
+
+def rollout_with_policy_intermediate(
+    env_template, x0, *, num_campaigns_total, B_campaign, v_used, mode="oracle"
+):
     """
     mode:
       - "oracle": campaign0 is zero-control, then centrality-based control using v_used each campaign
@@ -109,12 +131,20 @@ def rollout_with_policy_intermediate(env_template, x0, *, num_campaigns_total, B
         dynamics_model=str(env_template.dynamics_model),
         control_resistance=np.array(env_template.control_resistance, copy=True),
         max_steps=int(getattr(env_template, "max_steps", 10_000)),
-        opinion_end_tolerance=float(getattr(env_template, "opinion_end_tolerance", 0.01)),
+        opinion_end_tolerance=float(
+            getattr(env_template, "opinion_end_tolerance", 0.01)
+        ),
         control_beta=float(getattr(env_template, "control_beta", 0.4)),
         normalize_reward=bool(getattr(env_template, "normalize_reward", False)),
         terminal_reward=float(getattr(env_template, "terminal_reward", 0.0)),
-        terminate_when_converged=bool(getattr(env_template, "terminate_when_converged", True)),
-        seed=int(getattr(env_template, "seed", 0)) if getattr(env_template, "seed", None) is not None else None,
+        terminate_when_converged=bool(
+            getattr(env_template, "terminate_when_converged", True)
+        ),
+        seed=(
+            int(getattr(env_template, "seed", 0))
+            if getattr(env_template, "seed", None) is not None
+            else None
+        ),
     )
     env = EnvCls(**kwargs)
 
@@ -129,7 +159,7 @@ def rollout_with_policy_intermediate(env_template, x0, *, num_campaigns_total, B
     rewards = []
 
     inter_states = []
-    inter_times  = []
+    inter_times = []
 
     for k in range(num_campaigns_total):
         if mode == "nocontrol" or (k == 0):
@@ -158,10 +188,19 @@ def rollout_with_policy_intermediate(env_template, x0, *, num_campaigns_total, B
         if done or trunc:
             break
 
-    return env, np.array(states), np.array(actions), np.array(rewards), np.array(inter_states), np.array(inter_times)
+    return (
+        env,
+        np.array(states),
+        np.array(actions),
+        np.array(rewards),
+        np.array(inter_states),
+        np.array(inter_times),
+    )
 
 
-def rollout_with_v_intermediate(env_template, x0, K_total, B_campaign, v_used, *, zero_first_campaign=True):
+def rollout_with_v_intermediate(
+    env_template, x0, K_total, B_campaign, v_used, *, zero_first_campaign=True
+):
     """
     Roll out on a FRESH env cloned from env_template, starting from EXACTLY x0,
     collecting info['intermediate_states'] each campaign.
@@ -215,13 +254,14 @@ def rollout_with_v_intermediate(env_template, x0, K_total, B_campaign, v_used, *
             break
 
     return {
-        "states": np.asarray(states, dtype=float),          # (K+1, N)
-        "actions": np.asarray(actions, dtype=float),        # (K, N)
-        "rewards": np.asarray(rewards, dtype=float),        # (K,)
-        "intermediate_states_list": inter_list,             # list of (T_k, N)
-        "intermediate_times_list": time_list,               # list of (T_k,)
-        "env": env,                                         # helpful for debugging
+        "states": np.asarray(states, dtype=float),  # (K+1, N)
+        "actions": np.asarray(actions, dtype=float),  # (K, N)
+        "rewards": np.asarray(rewards, dtype=float),  # (K,)
+        "intermediate_states_list": inter_list,  # list of (T_k, N)
+        "intermediate_times_list": time_list,  # list of (T_k,)
+        "env": env,  # helpful for debugging
     }
+
 
 # -----------------------------------------------------------------------------
 # Additional rollout helpers used by random-init/no-control data experiments.
@@ -249,9 +289,11 @@ def env_template_kwargs_full(env, fallback_seed=None):
         normalize_reward=bool(getattr(env, "normalize_reward", False)),
         terminal_reward=float(getattr(env, "terminal_reward", 0.0)),
         terminate_when_converged=bool(getattr(env, "terminate_when_converged", True)),
-        seed=int(getattr(env, "seed", fallback_seed))
-        if getattr(env, "seed", None) is not None or fallback_seed is not None
-        else None,
+        seed=(
+            int(getattr(env, "seed", fallback_seed))
+            if getattr(env, "seed", None) is not None or fallback_seed is not None
+            else None
+        ),
     )
     for name in [
         "fj_lambda",
@@ -265,7 +307,9 @@ def env_template_kwargs_full(env, fallback_seed=None):
         if hasattr(env, name):
             val = getattr(env, name)
             if val is not None:
-                kwargs[name] = np.array(val, copy=True) if isinstance(val, np.ndarray) else val
+                kwargs[name] = (
+                    np.array(val, copy=True) if isinstance(val, np.ndarray) else val
+                )
     return kwargs
 
 
@@ -323,7 +367,9 @@ def centrality_budget_action_from_state(x, *, v, max_u, beta, desired_opinion):
     x = np.asarray(x, dtype=float)
     v = np.asarray(v, dtype=float)
     scores = v * np.abs(float(desired_opinion) - x)
-    return waterfill_from_scores(scores, max_u=np.asarray(max_u, dtype=float), beta=float(beta))
+    return waterfill_from_scores(
+        scores, max_u=np.asarray(max_u, dtype=float), beta=float(beta)
+    )
 
 
 def apply_impulse_control(x, u, desired_opinion):
@@ -393,7 +439,9 @@ def rollout_with_model_derived_control_intermediate(
             A_eff = np.full((N, N), np.nan)
             v_eff = np.full(N, np.nan)
         else:
-            A_eff, v_eff = effective_centrality_from_model_state(model, env.opinions, device=device)
+            A_eff, v_eff = effective_centrality_from_model_state(
+                model, env.opinions, device=device
+            )
             uk = centrality_budget_action_from_state(
                 env.opinions,
                 v=v_eff,
@@ -415,7 +463,10 @@ def rollout_with_model_derived_control_intermediate(
         else:
             inter_arr = np.asarray(inter, dtype=float)
             inter_list.append(inter_arr.copy())
-            time_list.append(float(getattr(env, "t_s", 1.0)) * np.arange(inter_arr.shape[0], dtype=float))
+            time_list.append(
+                float(getattr(env, "t_s", 1.0))
+                * np.arange(inter_arr.shape[0], dtype=float)
+            )
 
         if done or trunc:
             break
@@ -464,7 +515,10 @@ def rollout_with_uniform_intermediate(
         else:
             inter_arr = np.asarray(inter, dtype=float)
             inter_list.append(inter_arr.copy())
-            time_list.append(float(getattr(env, "t_s", 1.0)) * np.arange(inter_arr.shape[0], dtype=float))
+            time_list.append(
+                float(getattr(env, "t_s", 1.0))
+                * np.arange(inter_arr.shape[0], dtype=float)
+            )
         if done or trunc:
             break
 
@@ -478,7 +532,9 @@ def rollout_with_uniform_intermediate(
     )
 
 
-def rollout_with_v_aligned_intermediate(env, x0, K_total, B_campaign, v_used, *, zero_first_campaign=False):
+def rollout_with_v_aligned_intermediate(
+    env, x0, K_total, B_campaign, v_used, *, zero_first_campaign=False
+):
     """Centrality/no-control baseline on an already-created env instance."""
     N = int(env.num_agents)
     env.reset()
@@ -509,7 +565,10 @@ def rollout_with_v_aligned_intermediate(env, x0, K_total, B_campaign, v_used, *,
         else:
             inter_arr = np.asarray(inter, dtype=float)
             inter_list.append(inter_arr.copy())
-            time_list.append(float(getattr(env, "t_s", 1.0)) * np.arange(inter_arr.shape[0], dtype=float))
+            time_list.append(
+                float(getattr(env, "t_s", 1.0))
+                * np.arange(inter_arr.shape[0], dtype=float)
+            )
         if done or trunc:
             break
 
@@ -522,6 +581,7 @@ def rollout_with_v_aligned_intermediate(env, x0, K_total, B_campaign, v_used, *,
         env=env,
     )
 
+
 # =============================================================================
 # Source-of-truth notebook helpers imported by the test_* notebooks
 # Extracted from the user-maintained notebook to avoid duplicated cell code.
@@ -532,6 +592,7 @@ from rl_envs_forge.envs.network_graph.graph_utils import (
     compute_laplacian,
     compute_eigenvector_centrality,
 )
+
 
 def _maybe_copy(v):
     if v is None:
@@ -563,9 +624,11 @@ def _env_template_kwargs_full(env, fallback_seed: int | None = None) -> dict[str
         normalize_reward=bool(getattr(env, "normalize_reward", False)),
         terminal_reward=float(getattr(env, "terminal_reward", 0.0)),
         terminate_when_converged=bool(getattr(env, "terminate_when_converged", True)),
-        seed=int(getattr(env, "seed", fallback_seed))
-        if getattr(env, "seed", None) is not None or fallback_seed is not None
-        else None,
+        seed=(
+            int(getattr(env, "seed", fallback_seed))
+            if getattr(env, "seed", None) is not None or fallback_seed is not None
+            else None
+        ),
     )
 
     # Preserve dynamics-specific parameters when recreating fresh envs.
@@ -665,7 +728,9 @@ def centrality_budget_action_from_state(
     x = np.asarray(x, dtype=float)
     v = np.asarray(v, dtype=float)
     scores = v * np.abs(float(desired_opinion) - x)
-    return waterfill_from_scores(scores, max_u=np.asarray(max_u, dtype=float), beta=float(beta))
+    return waterfill_from_scores(
+        scores, max_u=np.asarray(max_u, dtype=float), beta=float(beta)
+    )
 
 
 def apply_impulse_control(
@@ -800,7 +865,9 @@ def rollout_with_model_derived_control_intermediate(
         else:
             inter_arr = np.asarray(inter, dtype=float)
             intermediate_states_list.append(inter_arr)
-            intermediate_times_list.append(dt * np.arange(inter_arr.shape[0], dtype=float))
+            intermediate_times_list.append(
+                dt * np.arange(inter_arr.shape[0], dtype=float)
+            )
 
         if done or trunc:
             break
@@ -857,7 +924,9 @@ def rollout_with_policy_intermediate(
         else:
             inter_arr = np.asarray(inter, dtype=float)
             intermediate_states_list.append(inter_arr)
-            intermediate_times_list.append(dt * np.arange(inter_arr.shape[0], dtype=float))
+            intermediate_times_list.append(
+                dt * np.arange(inter_arr.shape[0], dtype=float)
+            )
 
         if done or trunc:
             break
@@ -954,7 +1023,9 @@ def rollout_identifier_model_with_policy(
         states.append(x.copy())
         actions.append(u.copy())
         intermediate_states_list.append(np.asarray(campaign_states, dtype=float))
-        intermediate_times_list.append(dt * np.arange(len(campaign_states), dtype=float))
+        intermediate_times_list.append(
+            dt * np.arange(len(campaign_states), dtype=float)
+        )
 
     return {
         "states": np.asarray(states, dtype=float),
@@ -962,6 +1033,7 @@ def rollout_identifier_model_with_policy(
         "intermediate_states_list": intermediate_states_list,
         "intermediate_times_list": intermediate_times_list,
     }
+
 
 # Public aliases for module use.
 env_template_kwargs_full = _env_template_kwargs_full
