@@ -1,8 +1,7 @@
-"""Rollout and control-allocation helpers used by the network opinion experiments.
+"""Rollout and policy helpers for the random-init single-campaign experiments.
 
-This file intentionally contains one canonical definition per helper.  The
-implementations below were extracted from the maintained inline notebook so the
-modularized notebook follows the same control/evaluation behavior.
+This module is a parity-preserving extraction from
+`test_multiseed_all_propagation_methods_nocontrol_singlecampaign_random_inits_uniform_cached.ipynb`.
 """
 
 from __future__ import annotations
@@ -11,24 +10,29 @@ import copy
 from typing import Any
 
 import numpy as np
+import pandas as pd
 import torch
 
 from rl_envs_forge.envs.network_graph.graph_utils import (
     compute_laplacian,
     compute_eigenvector_centrality,
 )
-
 from opinion_dynamics.baseline import centrality_based_continuous_control
 
 
 def _clone_env_from_template(env_template):
-    """Create a fresh env with the same graph/parameters as env_template."""
-    env, _ = _fresh_env_from_template(env_template, repeat_seed=getattr(env_template, "seed", None))
-    return env
+    """Create a fresh env with the same graph/params as env_template."""
+    EnvCls = env_template.__class__
+    kwargs = _env_template_kwargs_full(env_template)
+    return EnvCls(**kwargs)
 
 
 def make_env_with_dynamics(env_factory, seed: int, dynamics_model: str):
-    """Build an env for one dynamics model, preserving the generated graph when needed."""
+    """
+    Best-effort:
+    1) ask the factory directly for the requested dynamics;
+    2) if the factory signature does not support it, rebuild with the same graph.
+    """
     try:
         return env_factory.get_randomized_env(seed=int(seed), dynamics_model=str(dynamics_model))
     except TypeError:
@@ -46,25 +50,16 @@ def rollout_with_v(
     B_campaign,
     v_used,
     *,
-    zero_first_campaign: bool = True,
+    zero_first_campaign: bool = False,
 ):
-    """
-    Roll out centrality-based control from x0.
-
-    The default preserves the source notebook/module behavior: controlled
-    centrality rollouts use a zero-control campaign first, then control on
-    campaigns 1..K-1. Set zero_first_campaign=False only for aligned
-    campaign-0 ablations.
-    """
+    """Roll out centrality/no-control policy at campaign boundaries."""
     env = _clone_env_from_template(env_template)
     env.reset()
     env.opinions = np.array(x0, copy=True)
 
-    N = env.num_agents
+    N = int(env.num_agents)
     ubar_vec = np.asarray(env.max_u, dtype=float)
-
     states = [env.opinions.copy()]
-    done = trunc = False
 
     for k in range(int(num_campaigns_total)):
         if (zero_first_campaign and k == 0) or v_used is None:
@@ -75,7 +70,6 @@ def rollout_with_v(
 
         x_next, _r, done, trunc, _info = env.step(uk)
         states.append(x_next.copy())
-
         if done or trunc:
             break
 
@@ -89,12 +83,11 @@ def rollout_with_v_intermediate(
     B_campaign,
     v_used,
     *,
-    zero_first_campaign: bool = True,
+    zero_first_campaign: bool = False,
 ):
-    """Centrality/no-control rollout that also returns intermediate states."""
+    """Roll out centrality/no-control policy and collect intermediate states."""
     env = _clone_env_from_template(env_template)
-
-    N = env.num_agents
+    N = int(env.num_agents)
     ubar_vec = np.asarray(env.max_u, dtype=float)
 
     env.reset()
@@ -123,7 +116,7 @@ def rollout_with_v_intermediate(
             time_list.append(None)
         else:
             inter_arr = np.asarray(inter, dtype=float)
-            inter_list.append(inter_arr)
+            inter_list.append(inter_arr.copy())
             time_list.append(dt * np.arange(inter_arr.shape[0], dtype=float))
 
         if done or trunc:
@@ -137,6 +130,7 @@ def rollout_with_v_intermediate(
         "intermediate_times_list": time_list,
         "env": env,
     }
+
 
 def _maybe_copy(v):
     if v is None:
@@ -204,6 +198,44 @@ def _fresh_env_from_template(
         kwargs["initial_opinions"] = np.array(initial_opinions, copy=True)
     env = EnvCls(**kwargs)
     return env, kwargs
+
+
+def sample_init_opinions(
+    N: int,
+    rng: np.random.Generator,
+    mode: str = "uniform",
+    low: float = 0.01,
+    high: float = 0.99,
+) -> np.ndarray:
+    if mode == "permuted_linspace":
+        x0 = np.linspace(low, high, N, dtype=float)
+        rng.shuffle(x0)
+        return x0
+    if mode == "uniform":
+        return rng.uniform(low, high, size=N).astype(float)
+    raise ValueError(f"Unknown init_mode: {mode}")
+
+
+def summarize_training_inits(x0_list: np.ndarray) -> pd.DataFrame:
+    rows = []
+    for r in range(x0_list.shape[0]):
+        x = np.asarray(x0_list[r], dtype=float)
+        rows.append(
+            dict(
+                repeat=r,
+                min=float(x.min()),
+                q10=float(np.quantile(x, 0.10)),
+                q25=float(np.quantile(x, 0.25)),
+                median=float(np.median(x)),
+                q75=float(np.quantile(x, 0.75)),
+                q90=float(np.quantile(x, 0.90)),
+                max=float(x.max()),
+                mean=float(x.mean()),
+                std=float(x.std()),
+                range=float(x.max() - x.min()),
+            )
+        )
+    return pd.DataFrame(rows)
 
 
 def waterfill_from_scores(
@@ -347,6 +379,7 @@ def rollout_with_model_derived_control_intermediate(
     B_campaign: float,
     *,
     device: str = "cpu",
+    zero_first_campaign: bool = False,
 ):
     """
     Roll out the TRUE environment using a learned state-dependent control policy.
@@ -378,13 +411,16 @@ def rollout_with_model_derived_control_intermediate(
         x_curr = np.asarray(states[-1], dtype=float)
 
         A_eff, v_eff = effective_centrality_from_model_state(mdl, x_curr, device=device)
-        u = centrality_budget_action_from_state(
-            x_curr,
-            v=v_eff,
-            max_u=max_u,
-            beta=B_campaign,
-            desired_opinion=desired_opinion,
-        )
+        if zero_first_campaign and _k == 0:
+            u = np.zeros_like(max_u, dtype=float)
+        else:
+            u = centrality_budget_action_from_state(
+                x_curr,
+                v=v_eff,
+                max_u=max_u,
+                beta=B_campaign,
+                desired_opinion=desired_opinion,
+            )
 
         x_next, r, done, trunc, info = env.step(np.asarray(u, dtype=float))
 
@@ -422,6 +458,8 @@ def rollout_with_policy_intermediate(
     x0: np.ndarray,
     num_campaigns_total: int,
     action_fn,
+    *,
+    zero_first_campaign: bool = False,
 ):
     """
     Roll out the TRUE environment using an external policy action_fn(x_current).
@@ -438,7 +476,10 @@ def rollout_with_policy_intermediate(
 
     for _k in range(int(num_campaigns_total)):
         x_curr = np.asarray(states[-1], dtype=float)
-        u = np.asarray(action_fn(x_curr), dtype=float)
+        if zero_first_campaign and _k == 0:
+            u = np.zeros_like(np.asarray(env.max_u, dtype=float))
+        else:
+            u = np.asarray(action_fn(x_curr), dtype=float)
 
         x_next, r, done, trunc, info = env.step(u)
 
@@ -472,6 +513,8 @@ def rollout_with_uniform_intermediate(
     x0: np.ndarray,
     num_campaigns_total: int,
     B_campaign: float,
+    *,
+    zero_first_campaign: bool = False,
 ):
     max_u = np.asarray(env.max_u, dtype=float)
     return rollout_with_policy_intermediate(
@@ -479,6 +522,7 @@ def rollout_with_uniform_intermediate(
         x0,
         num_campaigns_total,
         action_fn=lambda x: uniform_budget_action(max_u=max_u, beta=B_campaign),
+        zero_first_campaign=zero_first_campaign,
     )
 
 
@@ -557,6 +601,3 @@ def rollout_identifier_model_with_policy(
     }
 
 
-# Public aliases without leading underscores for reuse outside notebooks.
-env_template_kwargs_full = _env_template_kwargs_full
-fresh_env_from_template = _fresh_env_from_template
