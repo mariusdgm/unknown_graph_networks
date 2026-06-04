@@ -163,6 +163,9 @@ def train_graph_identifier(
 
     opt = torch.optim.Adam(model.parameters(), lr=lr)
 
+    last_mae = float("nan")
+    stop_reason = "max_steps"
+
     for step in range(max_steps):
         idx = torch.randint(0, n, (min(batch_size, n),), device=device)
         xb, yb = X[idx], Y[idx]
@@ -176,7 +179,9 @@ def train_graph_identifier(
             with torch.no_grad():
                 yhat = model.predict_next(X)
                 mae = (yhat - Y).abs().mean().item()
+            last_mae = float(mae)
             if mae <= mae_stop:
+                stop_reason = "mae_stop"
                 break
 
         if verbose_every and step % verbose_every == 0:
@@ -195,6 +200,21 @@ def train_graph_identifier(
                     f"| A min/max={A.min().item():.3g}/{A.max().item():.3g} "
                     f"| alpha(0,0)={alpha0:.3g}"
                 )
+
+    if not np.isfinite(last_mae):
+        with torch.no_grad():
+            yhat = model.predict_next(X)
+            last_mae = float((yhat - Y).abs().mean().item())
+
+    model.last_fit_info = {
+        "steps_run": int(step + 1),
+        "stop_reason": str(stop_reason),
+        "mae": float(last_mae),
+        "mae_stop": float(mae_stop),
+        "max_steps": int(max_steps),
+        "batch_size": int(batch_size),
+        "fit_check_every": int(fit_check_every),
+    }
 
     with torch.no_grad():
         A_hat = model.A_hat().detach().cpu().numpy()

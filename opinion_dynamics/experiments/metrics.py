@@ -40,10 +40,72 @@ def graph_sanity(A):
 
 
 # =========================================================
+# State-space oracle-distance metrics
+# =========================================================
+
+def state_distance_to_oracle(
+    states_learn,
+    states_oracle,
+    *,
+    states_uniform=None,
+    states_nocontrol=None,
+    prefix: str = "state",
+) -> dict[str, float]:
+    """
+    Compare the full learned state trajectory to the full oracle state trajectory.
+
+    This is preferred over mean-opinion-only gaps when dynamics are nonlinear:
+    two policies can have similar network average while disagreeing node-by-node.
+
+    Returns end/average/max RMSE, MAE, and L_inf metrics. If uniform or no-control
+    trajectories are provided, also returns the fraction of the baseline-to-oracle
+    RMSE gap closed by the learned rollout at the final time.
+    """
+    X = np.asarray(states_learn, dtype=float)
+    O = np.asarray(states_oracle, dtype=float)
+    T = min(X.shape[0], O.shape[0])
+    X, O = X[:T], O[:T]
+
+    diff = X - O
+    rmse_t = np.sqrt(np.mean(diff ** 2, axis=1))
+    mae_t = np.mean(np.abs(diff), axis=1)
+    linf_t = np.max(np.abs(diff), axis=1)
+
+    out = {
+        f"{prefix}_rmse_to_oracle_end": float(rmse_t[-1]),
+        f"{prefix}_rmse_to_oracle_avg": float(np.mean(rmse_t)),
+        f"{prefix}_rmse_to_oracle_max": float(np.max(rmse_t)),
+        f"{prefix}_mae_to_oracle_end": float(mae_t[-1]),
+        f"{prefix}_mae_to_oracle_avg": float(np.mean(mae_t)),
+        f"{prefix}_linf_to_oracle_end": float(linf_t[-1]),
+        f"{prefix}_linf_to_oracle_max": float(np.max(linf_t)),
+    }
+
+    def _fraction_closed(baseline_states, name: str):
+        B = np.asarray(baseline_states, dtype=float)[:T]
+        base_end = float(np.sqrt(np.mean((B[-1] - O[-1]) ** 2)))
+        learn_end = out[f"{prefix}_rmse_to_oracle_end"]
+        out[f"{prefix}_rmse_fraction_closed_vs_{name}_end"] = (
+            float(1.0 - learn_end / base_end) if base_end > 1e-12 else np.nan
+        )
+        out[f"{prefix}_rmse_baseline_{name}_to_oracle_end"] = base_end
+
+    if states_uniform is not None:
+        _fraction_closed(states_uniform, "uniform")
+    if states_nocontrol is not None:
+        _fraction_closed(states_nocontrol, "nocontrol")
+
+    return out
+
+
+# =========================================================
 # Validation learning-curve / data-need helpers
 # =========================================================
 
 _VALIDATION_METRICS_DEFAULT = [
+    "state_rmse_to_oracle_end",
+    "state_rmse_to_oracle_avg",
+    "state_rmse_fraction_closed_vs_uniform_end",
     "mean_gap_to_oracle_end",
     "mean_gain_vs_uniform_end",
     "mean_gain_vs_noc_end",

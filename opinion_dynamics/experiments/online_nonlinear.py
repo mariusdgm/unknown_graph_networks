@@ -25,6 +25,7 @@ from opinion_dynamics.identify_nonlinear import (
     train_graph_identifier,
 )
 from opinion_dynamics.utils.env_setup import EnvironmentFactory
+from opinion_dynamics.experiments.metrics import state_distance_to_oracle
 from opinion_dynamics.experiments.rollouts import (
     _fresh_env_from_template,
     sample_init_opinions,
@@ -313,6 +314,13 @@ def run_repeated_nocontrol_singlecampaign_id_on_env(
 
         mean_err = np.abs(mean_le - mean_or)
         vx_err = np.abs(vx_le - vx_or)
+        state_oracle_metrics = state_distance_to_oracle(
+            sl,
+            so,
+            states_uniform=su,
+            states_nocontrol=sn,
+        )
+        last_fit_info = getattr(gi, "last_fit_info", {}) or {}
 
         row = dict(
             seed=int(base_seed),
@@ -339,6 +347,14 @@ def run_repeated_nocontrol_singlecampaign_id_on_env(
             vx_gap_to_oracle_end=float(np.abs(vx_le[-1] - vx_or[-1])),
             vx_err_avg=float(vx_err.mean()),
             vx_err_max=float(vx_err.max()),
+            **state_oracle_metrics,
+            fit_max_steps_used=int(fit_max_steps),
+            fit_mae_stop_used=float(fit_mae_stop),
+            fit_batch_size_used=int(fit_batch_size),
+            fit_check_every_used=int(fit_check_every),
+            fit_steps_run_last=int(last_fit_info.get("steps_run", -1)),
+            fit_stop_reason_last=str(last_fit_info.get("stop_reason", "unknown")),
+            fit_mae_last=float(last_fit_info.get("mae", np.nan)),
             time_fit_inner=float(timing["fit_time"]),
             time_step_inner=float(timing["step_time"]),
             fit_calls_inner=int(timing["fit_calls"]),
@@ -576,6 +592,12 @@ def evaluate_model_on_validation_x0s(
         mean_uni = su.mean(axis=1)
         vx_le = sl @ v_true
         vx_or = so @ v_true
+        state_oracle_metrics = state_distance_to_oracle(
+            sl,
+            so,
+            states_uniform=su,
+            states_nocontrol=sn,
+        )
 
         rows.append(
             dict(
@@ -590,6 +612,7 @@ def evaluate_model_on_validation_x0s(
                 vx_gap_to_oracle_end=float(abs(vx_le[-1] - vx_or[-1])),
                 mean_err_avg=float(np.abs(mean_le - mean_or).mean()),
                 mean_err_max=float(np.abs(mean_le - mean_or).max()),
+                **state_oracle_metrics,
             )
         )
 
@@ -736,6 +759,10 @@ def run_data_budget_sweep_on_env(
                 A_MAE_final=float(np.mean(np.abs(np.asarray(A_hat, dtype=float) - A_true))),
                 v_L1_final=float(np.sum(np.abs(np.asarray(v_hat, dtype=float) - v_true))),
                 fit_time_inner=float(fit_time),
+                fit_max_steps_used=int(fit_max_steps),
+                fit_mae_stop_used=float(fit_mae_stop),
+                fit_batch_size_used=int(fit_batch_size),
+                fit_check_every_used=int(fit_check_every),
                 **{k: float(v) for k, v in val_mean.items()},
                 **{k: float(v) for k, v in val_std.items()},
             )

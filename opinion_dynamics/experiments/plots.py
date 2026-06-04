@@ -7,8 +7,10 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 from opinion_dynamics.experiments.rollouts import apply_impulse_control
-from opinion_dynamics.experiments.metrics import aggregate_learning_curve
-from opinion_dynamics.experiments.metrics import add_trial_count_column
+from opinion_dynamics.experiments.metrics import (
+    aggregate_learning_curve,
+    add_trial_count_column,
+)
 
 
 def show_matrix_with_cell_grid(
@@ -33,13 +35,7 @@ def show_matrix_with_cell_grid(
 
     ax.set_xticks(np.arange(-0.5, ncols, 1), minor=True)
     ax.set_yticks(np.arange(-0.5, nrows, 1), minor=True)
-    ax.grid(
-        which="minor",
-        color=grid_color,
-        linestyle="-",
-        linewidth=grid_lw,
-        alpha=grid_alpha,
-    )
+    ax.grid(which="minor", color=grid_color, linestyle="-", linewidth=grid_lw, alpha=grid_alpha)
     ax.tick_params(which="minor", bottom=False, left=False)
 
     if show_ticks:
@@ -179,9 +175,7 @@ def build_augmented_campaign_trajectory(
 
         x_pre = np.asarray(states_boundary[k], dtype=float)
         u_k = np.asarray(actions[k], dtype=float)
-        x_ctrl = apply_impulse_control(
-            x_pre, u_k, desired_opinion=float(desired_opinion)
-        )
+        x_ctrl = apply_impulse_control(x_pre, u_k, desired_opinion=float(desired_opinion))
 
         # Explicit campaign boundary/pre-impulse point.
         _append_state(x_pre, campaign_start)
@@ -209,10 +203,7 @@ def build_augmented_campaign_trajectory(
                     local_t = local_t[1:]
 
                 # Defensive handling for envs that include the pre-impulse state.
-                if (
-                    inter_arr.shape[0] > 0
-                    and np.max(np.abs(inter_arr[0] - x_pre)) <= atol
-                ):
+                if inter_arr.shape[0] > 0 and np.max(np.abs(inter_arr[0] - x_pre)) <= atol:
                     inter_arr = inter_arr[1:]
                     local_t = local_t[1:]
 
@@ -229,9 +220,7 @@ def build_augmented_campaign_trajectory(
 
     if np.any(np.diff(T) < -10 * atol):
         bad = np.where(np.diff(T) < -10 * atol)[0][:5]
-        raise RuntimeError(
-            f"Non-monotone augmented time vector near indices {bad}: {T[bad]} -> {T[bad + 1]}"
-        )
+        raise RuntimeError(f"Non-monotone augmented time vector near indices {bad}: {T[bad]} -> {T[bad + 1]}")
 
     return X, T
 
@@ -252,9 +241,7 @@ def plot_learning_curve_metric(
     """
     dfc = add_trial_count_column(df_in)
     if metric not in dfc.columns:
-        raise ValueError(
-            f"Metric {metric!r} not found. Available columns include: {list(dfc.columns)[:20]}..."
-        )
+        raise ValueError(f"Metric {metric!r} not found. Available columns include: {list(dfc.columns)[:20]}...")
 
     agg = aggregate_learning_curve(dfc, metrics=[metric])
     dyns = list(dfc["dynamics"].drop_duplicates())
@@ -299,9 +286,7 @@ def plot_trials_needed_summary(summary_df: pd.DataFrame):
     x = np.arange(summary_df.shape[0])
     ax.bar(x, summary_df["trials_needed_median"].to_numpy(dtype=float))
     ax.set_xticks(x)
-    ax.set_xticklabels(
-        summary_df["dynamics"].astype(str).tolist(), rotation=20, ha="right"
-    )
+    ax.set_xticklabels(summary_df["dynamics"].astype(str).tolist(), rotation=20, ha="right")
     ax.set_ylabel("median trials needed")
     ax.set_title("Data need estimate from validation criteria")
     ax.grid(True, axis="y", alpha=0.3)
@@ -337,17 +322,11 @@ def plot_mean_baseline_comparison(mean_series, title, *args, **kwargs):
     x = np.arange(first.shape[0])
 
     style_cycle = [
-        dict(marker="o", linestyle="-", linewidth=2.5, markersize=5.2, zorder=5),
+        dict(marker="o", linestyle="-",  linewidth=2.5, markersize=5.2, zorder=5),
         dict(marker="s", linestyle="--", linewidth=2.1, markersize=5.0, zorder=4),
         dict(marker="^", linestyle="-.", linewidth=2.1, markersize=5.0, zorder=3),
-        dict(marker="D", linestyle=":", linewidth=2.3, markersize=4.8, zorder=2),
-        dict(
-            marker="x",
-            linestyle=(0, (3, 1, 1, 1)),
-            linewidth=2.0,
-            markersize=5.4,
-            zorder=1,
-        ),
+        dict(marker="D", linestyle=":",  linewidth=2.3, markersize=4.8, zorder=2),
+        dict(marker="x", linestyle=(0, (3, 1, 1, 1)), linewidth=2.0, markersize=5.4, zorder=1),
     ]
 
     fig, ax = plt.subplots(figsize=(10.5, 3.8))
