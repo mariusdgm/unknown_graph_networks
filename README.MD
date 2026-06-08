@@ -1,18 +1,8 @@
 # Control with learned should be as good as true model + optimal control 
 
-And should be better than uniform 
+M_lambda(x) = (1 - lambda) A_hat + lambda (A_hat x alpha(x))
 
-Control should always be done on original env 
 
-####
-Simplify learning scheme like the temperature of A vs alpha 
-
-#####
-Instead of doing control with learned A
-Compute new A * theta
-
-#### 
-Make an experiment to see where performance degrades sharply vs amount of data
 
 
 # 2 Step experiment:
