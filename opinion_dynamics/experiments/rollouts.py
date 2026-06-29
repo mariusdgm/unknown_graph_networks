@@ -601,3 +601,42 @@ def rollout_identifier_model_with_policy(
     }
 
 
+def make_epsilon_schedule(
+    num_campaigns_total,
+    exploration_campaigns,
+    eps_start=1.0,
+    eps_end=0.1,
+    full_exploitation_after=True,
+):
+    """
+    Campaign 0 is always no-control: epsilon = 0.
+
+    Campaigns 1..exploration_campaigns use a linear decay from
+    eps_start to eps_end.
+
+    Remaining campaigns use epsilon = 0 for full exploitation.
+    """
+    if num_campaigns_total < 1:
+        raise ValueError("num_campaigns_total must be >= 1")
+
+    max_exploration = max(0, num_campaigns_total - 1)
+    exploration_campaigns = int(min(exploration_campaigns, max_exploration))
+
+    schedule = [0.0]
+
+    if exploration_campaigns > 0:
+        if exploration_campaigns == 1:
+            exploration_eps = [float(eps_start)]
+        else:
+            exploration_eps = np.linspace(
+                float(eps_start),
+                float(eps_end),
+                exploration_campaigns,
+            ).tolist()
+        schedule.extend(exploration_eps)
+
+    remaining = num_campaigns_total - len(schedule)
+    if remaining > 0:
+        schedule.extend([0.0] * remaining)
+
+    return [float(eps) for eps in schedule]
