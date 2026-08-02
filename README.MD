@@ -14,3 +14,9 @@ compare this learned control with the original black box env
 
 
 # In case of revision for current article, maybe use these new prop methods with the previous RL setup
+
+
+## parallel ps start:
+cd D:\Work\repos\RL\unknown_graph_networks\opinion_dynamics\experiments\
+activate phd_rl_algos
+run_lambda_mix_shards_60s_poll.cmd python 3 300
