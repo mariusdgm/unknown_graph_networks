@@ -20,3 +20,4 @@ compare this learned control with the original black box env
 cd D:\Work\repos\RL\unknown_graph_networks\opinion_dynamics\experiments\
 activate phd_rl_algos
 run_lambda_mix_shards_60s_poll.cmd python 3 300
+run_single_shot_exploration_shards.cmd python 3 60
