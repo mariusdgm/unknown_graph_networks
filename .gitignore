@@ -2,6 +2,11 @@
 
 results/
 
+# Parallel experiment shard artifacts
+opinion_dynamics/experiments/logs_alpha_u_*/
+opinion_dynamics/experiments/*_logs*/
+opinion_dynamics/experiments/executed_*_shard_*.ipynb
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
