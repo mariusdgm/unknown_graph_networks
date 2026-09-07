@@ -1,5 +1,5 @@
 *.done
-
+**/shard_*.exit
 results/
 
 # Parallel experiment shard artifacts
