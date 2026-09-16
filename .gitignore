@@ -2,8 +2,11 @@
 **/shard_*.exit
 results/
 
+# Local pre-final archive snapshots
+opinion_dynamics/experiments/archive/pre_final_*/
+
 # Parallel experiment shard artifacts
-opinion_dynamics/experiments/logs_alpha_u_*/
+opinion_dynamics/experiments/logs_*/
 opinion_dynamics/experiments/*_logs*/
 opinion_dynamics/experiments/executed_*_shard_*.ipynb
 
