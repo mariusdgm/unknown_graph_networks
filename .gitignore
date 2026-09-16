@@ -4,6 +4,7 @@ results/
 
 # Local pre-final archive snapshots
 opinion_dynamics/experiments/archive/pre_final_*/
+opinion_dynamics/experiments/archive/older_cleanup/
 
 # Parallel experiment shard artifacts
 opinion_dynamics/experiments/logs_*/
