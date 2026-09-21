@@ -1,17 +1,11 @@
 # Control with learned should be as good as true model + optimal control 
 
-M_lambda(x) = (1 - lambda) A_hat + lambda (A_hat x alpha(x))
+Run one experiment with sparsity constraint in the A learning, so we don't get diffuse learned A
 
+Model based approach:
+Try to deduce the analytic correct propagation function and add it to the baseline. For the cases where this is possible, we make one more explanation and add the results. Then we say for the other ones it's not that easy so we use the baseline with no prop method
 
-
-
-# 2 Step experiment:
-use current setup to learn A and alpha (we do system identification here) -> freeze the model
-use frozen model to simulate control experiments where one agent tries to learn an importance vector
-use the vector to greedily assign the control budget
-
-compare this learned control with the original black box env
-
+We'll see about ablation
 
 # In case of revision for current article, maybe use these new prop methods with the previous RL setup
 
